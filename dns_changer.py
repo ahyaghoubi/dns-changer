@@ -190,6 +190,10 @@ options timeout:2 attempts:3 rotate single-request-reopen
             subprocess.run(["apt", "install", "-y", "dnsmasq"], check=True)
             print("✅ Installed dnsmasq")
             
+            # Stop systemd-resolved to free port 53
+            subprocess.run(["systemctl", "stop", "systemd-resolved"], check=False)
+            print("✅ Stopped systemd-resolved to free port 53")
+            
             # Configure dnsmasq
             dnsmasq_config = f"""# DNS configuration for YogaDNS-like behavior
 port=53
@@ -197,6 +201,8 @@ domain-needed
 bogus-priv
 no-resolv
 cache-size=1000
+listen-address=127.0.0.1
+bind-interfaces
 
 # Default DNS servers (Shecan)
 server={self.dns_servers['shecan_1']}
@@ -222,20 +228,49 @@ server={self.dns_servers['shecan_2']}
             
             print("✅ Configured dnsmasq")
             
+            # Update resolv.conf to point to localhost
+            resolv_content = """# DNS configuration - pointing to local dnsmasq
+nameserver 127.0.0.1
+options timeout:2 attempts:3
+"""
+            with open("/etc/resolv.conf", "w") as f:
+                f.write(resolv_content)
+            print("✅ Updated resolv.conf to use local dnsmasq")
+            
             # Start and enable dnsmasq
             subprocess.run(["systemctl", "enable", "dnsmasq"], check=True)
             subprocess.run(["systemctl", "restart", "dnsmasq"], check=True)
             print("✅ Started dnsmasq service")
             
+            # Check if dnsmasq is running
+            result = subprocess.run(["systemctl", "is-active", "dnsmasq"], 
+                                  capture_output=True, text=True)
+            if result.stdout.strip() == "active":
+                print("✅ dnsmasq service is running successfully")
+            else:
+                print("⚠️  dnsmasq may not be running properly")
+            
         except Exception as e:
             print(f"❌ Error installing/configuring dnsmasq: {e}")
+            print("ℹ️  Attempting fallback configuration...")
+            # Fallback: restart systemd-resolved if dnsmasq fails
+            try:
+                subprocess.run(["systemctl", "start", "systemd-resolved"], check=False)
+                print("✅ Restarted systemd-resolved as fallback")
+            except:
+                pass
 
     def flush_dns_cache(self):
         """Flush DNS cache"""
         try:
-            # Flush systemd-resolved cache
-            subprocess.run(["systemd-resolve", "--flush-caches"], check=True)
-            print("✅ Flushed systemd-resolved cache")
+            # Try resolvectl first (newer Ubuntu versions)
+            result = subprocess.run(["resolvectl", "flush-caches"], check=False)
+            if result.returncode == 0:
+                print("✅ Flushed DNS cache with resolvectl")
+            else:
+                # Fallback to systemd-resolve (older versions)
+                subprocess.run(["systemd-resolve", "--flush-caches"], check=True)
+                print("✅ Flushed systemd-resolved cache")
             
             # Restart networking
             subprocess.run(["systemctl", "restart", "networking"], check=False)
@@ -273,14 +308,32 @@ server={self.dns_servers['shecan_2']}
             print(f"❌ Could not read resolv.conf: {e}")
         
         try:
-            # Show systemd-resolved status
-            result = subprocess.run(["systemd-resolve", "--status"], 
+            # Show systemd-resolved status - try newer command first
+            result = subprocess.run(["resolvectl", "status"], 
                                   capture_output=True, text=True)
             if result.returncode == 0:
-                print("📄 systemd-resolved status:")
+                print("📄 resolvectl status:")
                 print(result.stdout[:500] + "..." if len(result.stdout) > 500 else result.stdout)
+            else:
+                # Fallback to older command
+                result = subprocess.run(["systemd-resolve", "--status"], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("📄 systemd-resolved status:")
+                    print(result.stdout[:500] + "..." if len(result.stdout) > 500 else result.stdout)
         except Exception as e:
-            print(f"❌ Could not get systemd-resolved status: {e}")
+            print(f"❌ Could not get DNS resolver status: {e}")
+        
+        try:
+            # Show dnsmasq status if running
+            result = subprocess.run(["systemctl", "is-active", "dnsmasq"], 
+                                  capture_output=True, text=True)
+            if result.stdout.strip() == "active":
+                print("📄 dnsmasq service: ✅ Active")
+            else:
+                print("📄 dnsmasq service: ❌ Inactive")
+        except Exception as e:
+            print(f"📄 dnsmasq service: ❓ Status unknown")
 
     def apply_configuration(self):
         """Apply all DNS configurations"""
