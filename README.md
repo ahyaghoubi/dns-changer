@@ -44,9 +44,9 @@ Based on your YogaDNS profile, the script configures:
 
 1. **Download the script to your Ubuntu server**:
    ```bash
-   wget https://your-repo/dns_changer.py
+   wget https://github.com/ahyaghoubi/dns-changer/raw/main/dns_changer.py
    # OR
-   git clone https://your-repo/dns-changer.git
+   git clone https://github.com/ahyaghoubi/dns-changer.git
    cd dns-changer
    ```
 

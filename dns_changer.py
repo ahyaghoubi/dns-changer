@@ -32,6 +32,7 @@ class DNSManager:
                 '*.visualstudio.com',
                 '*.githubusercontent.com',
                 '*.github.com',
+                '*.gitlab.com',
                 '*.azure.com',
                 '*.githubcopilot.com',
                 '*.npmjs.org',
